@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
 use std::{
     fs::{self, File},
-    io::Write,
+    io::{self, Write},
     path::{Path, PathBuf},
+    process::Command,
     str::FromStr,
     time::{Duration, Instant},
 };
@@ -56,6 +57,15 @@ enum Actions {
         /// Folder to save results in (default: results).
         #[arg(short, long)]
         output_folder: Option<String>,
+    },
+    /// Plot the results from the benchmarks.
+    Plot {
+        /// The folder containing the results (default: results/).
+        #[arg(short, long)]
+        results_folder: Option<PathBuf>,
+        /// The file name for the saves plots (default: results/bench-plot.pdf).
+        #[arg(short, long)]
+        output_file: Option<PathBuf>,
     },
 }
 
@@ -113,6 +123,14 @@ fn main() {
                     );
                 }
             }
+        }
+        Actions::Plot {
+            results_folder,
+            output_file,
+        } => {
+            let results_folder = results_folder.unwrap_or(PathBuf::from("results"));
+            let output_file = output_file.unwrap_or(PathBuf::from("results/bench-plot.pdf"));
+            plot(&results_folder, &output_file).unwrap();
         }
     };
 }
@@ -215,6 +233,19 @@ fn run_quartz(
     };
 
     bench_results
+}
+
+fn plot(results_folder: &PathBuf, output_file: &PathBuf) -> io::Result<String> {
+    Command::new("python")
+        .arg("py-scripts/plot.py")
+        .arg("-r")
+        .arg(results_folder)
+        .arg("-o")
+        .arg(output_file)
+        .output()
+        .and_then(|output| {
+            String::from_utf8(output.stdout).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        })
 }
 
 fn save_csv(
