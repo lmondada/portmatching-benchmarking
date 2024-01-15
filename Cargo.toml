@@ -1,0 +1,15 @@
+[package]
+name = "portmatching-benchmarking"
+description = "Benchmarks for the Portmatching crate."
+version = "0.1.0"
+edition = "2021"
+authors = ["Luca Mondada"]
+
+[build-dependencies]
+bindgen = "0.69.1"
+
+[dependencies]
+clap = { version = "4.4.15", features = ["derive"] }
+quantinuum-hugr = { git = "https://github.com/CQCL/hugr", rev = "25d03aa" }
+rmp-serde = "1.1.2"
+tket2 = { git = "https://github.com/CQCL/tket2", rev = "d44ac89", features = ["portmatching"] }

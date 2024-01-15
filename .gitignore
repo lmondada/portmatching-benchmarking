@@ -1,0 +1,15 @@
+lib
+results
+venv
+quartz_bindings/bindings.rs
+datasets/voqc-eccs/*/*
+Cargo.lock
+
+# too big for github
+datasets/voqc-eccs/Voqc_6_4_representative_set.json
+datasets/voqc-eccs/Voqc_8_3_representative_set.json
+
+
+# Added by cargo
+
+/target
