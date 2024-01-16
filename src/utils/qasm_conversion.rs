@@ -58,3 +58,16 @@ pub(crate) fn json_to_qasm(json: &str) -> io::Result<String> {
             String::from_utf8(output.stdout).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
         })
 }
+
+/// Converts all QASM files in a folder to JSON string using tket1.
+/// 
+/// The converted circuits will be saved as JSON files with the same names.
+pub(crate) fn batch_qasm_to_json(qasm_folder: &str) -> io::Result<String> {
+    Command::new("python")
+        .arg("py-scripts/qasm_to_json.py")
+        .arg(qasm_folder)
+        .output()
+        .and_then(|output| {
+            String::from_utf8(output.stdout).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        })
+}

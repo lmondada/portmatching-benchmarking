@@ -4,15 +4,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::utils::{json_to_qasm, qasm_to_json};
-use hugr::Hugr;
+use crate::utils::{batch_qasm_to_json, json_to_qasm, qasm_to_json};
 use tket2::{json::load_tk1_json_str, portmatching::CircuitPattern};
 
 pub mod ecc;
+pub mod random;
 
 pub trait Dataset {
-    type Graph;
-
     /// Generates the dataset.
     ///
     /// Returns the number of circuits generated.
@@ -28,9 +26,111 @@ pub trait Dataset {
     fn name(&self) -> String;
 }
 
-pub trait CircuitDataset {
-    fn from_circuit_folder(folder: &Path) -> Self;
+/// A dataset that is stored in a folder.
+///
+/// Any JSON or QASM files in the folder are considered circuits.
+///
+/// For faster loading, the dataset once generated is stored as binary files.
+pub trait FolderDataset {
+    /// The folder containing the dataset.
     fn circuit_folder(&self) -> &Path;
+
+    /// A pre-processing step that converts the dataset to QASM and/or JSON files.
+    fn unpack(&self);
+}
+
+impl<T: FolderDataset> Dataset for T {
+    fn iter_qasm(&self) -> impl Iterator<Item = String> {
+        let qasm_bin_file = fs::File::open(self.circuit_folder().join("qasm.bin")).unwrap();
+        let qasm: Vec<String> = rmp_serde::decode::from_read(qasm_bin_file).unwrap();
+        qasm.into_iter()
+    }
+
+    fn iter_json(&self) -> impl Iterator<Item = String> {
+        let json_bin_file = fs::File::open(self.circuit_folder().join("json.bin")).unwrap();
+        let json: Vec<String> = rmp_serde::decode::from_read(json_bin_file).unwrap();
+        json.into_iter()
+    }
+
+    fn name(&self) -> String {
+        self.circuit_folder()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn generate(&self, save_files: bool) -> usize {
+        self.unpack();
+        let folder = self.circuit_folder();
+
+        let file_names: HashSet<PathBuf> = folder
+            .read_dir()
+            .expect("Failed to read directory")
+            .map(|entry| entry.expect("Failed to read directory entry").path())
+            .filter(|path| {
+                path.extension()
+                    .map_or(false, |ext| ext == "json" || ext == "qasm")
+            })
+            .map(|path| path.with_extension(""))
+            .collect();
+
+        let mut files: Vec<_> = file_names
+            .into_iter()
+            .map(|path| QasmAndJson::from_path(&path))
+            .collect();
+
+        let n_conversions = files.iter().filter(|path| path.needs_conversion()).count();
+        if n_conversions > 100 {
+            if save_files {
+                batch_qasm_to_json(folder.to_str().unwrap()).unwrap();
+            } else {
+                println!(
+                    "Warning: must convert {} files from and to QASM in {}. \
+                This might take a while. Consider using the -s option to accelerate this \
+                or run py-scripts/qasm_to_json.py manually.",
+                    n_conversions,
+                    folder.to_str().unwrap()
+                );
+            }
+        }
+
+        for file in files.iter_mut() {
+            file.load().expect("Failed to load file");
+            if save_files {
+                file.save().expect("Failed to save file");
+            }
+        }
+        let (qasm, json): (Vec<_>, Vec<_>) = files
+            .into_iter()
+            .filter(|f| f.valid_pattern())
+            .map(|f| (f.qasm.contents.unwrap(), f.json.contents.unwrap()))
+            .unzip();
+
+        let mut qasm_bin_file = fs::File::create(self.circuit_folder().join("qasm.bin")).unwrap();
+        let mut json_bin_file = fs::File::create(self.circuit_folder().join("json.bin")).unwrap();
+        rmp_serde::encode::write(&mut qasm_bin_file, &qasm).unwrap();
+        rmp_serde::encode::write(&mut json_bin_file, &json).unwrap();
+        qasm.len()
+    }
+}
+
+/// A dataset stored in folder, no generation.
+pub struct NoGenFolderDataset(PathBuf);
+
+impl NoGenFolderDataset {
+    pub fn new(path: PathBuf) -> Self {
+        Self(path)
+    }
+}
+
+impl FolderDataset for NoGenFolderDataset {
+    fn circuit_folder(&self) -> &Path {
+        &self.0
+    }
+
+    fn unpack(&self) {}
 }
 
 struct UnsavedFile {
@@ -142,79 +242,5 @@ impl QasmAndJson {
         };
         let circ = load_tk1_json_str(json).unwrap();
         CircuitPattern::try_from_circuit(&circ).is_ok()
-    }
-}
-
-impl<T: CircuitDataset> Dataset for T {
-    type Graph = Hugr;
-
-    fn iter_qasm(&self) -> impl Iterator<Item = String> {
-        let qasm_bin_file = fs::File::open(self.circuit_folder().join("qasm.bin")).unwrap();
-        let qasm: Vec<String> = rmp_serde::decode::from_read(qasm_bin_file).unwrap();
-        qasm.into_iter()
-    }
-
-    fn iter_json(&self) -> impl Iterator<Item = String> {
-        let json_bin_file = fs::File::open(self.circuit_folder().join("json.bin")).unwrap();
-        let json: Vec<String> = rmp_serde::decode::from_read(json_bin_file).unwrap();
-        json.into_iter()
-    }
-
-    fn name(&self) -> String {
-        self.circuit_folder()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string()
-    }
-
-    fn generate(&self, save_files: bool) -> usize {
-        let folder = self.circuit_folder();
-
-        let file_names: HashSet<PathBuf> = folder
-            .read_dir()
-            .expect("Failed to read directory")
-            .map(|entry| entry.expect("Failed to read directory entry").path())
-            .filter(|path| {
-                path.extension()
-                    .map_or(false, |ext| ext == "json" || ext == "qasm")
-            })
-            .map(|path| path.with_extension(""))
-            .collect();
-
-        let mut files: Vec<_> = file_names
-            .into_iter()
-            .map(|path| QasmAndJson::from_path(&path))
-            .collect();
-
-        let n_conversions = files.iter().filter(|path| path.needs_conversion()).count();
-        if n_conversions > 100 {
-            println!(
-                "Warning: must convert {} files from and to QASM in {}. \
-                This might take a while. Using the qasm_to_json.py script \
-                manually is recommended.",
-                n_conversions,
-                folder.to_str().unwrap()
-            );
-        }
-
-        for file in files.iter_mut() {
-            file.load().expect("Failed to load file");
-            if save_files {
-                file.save().expect("Failed to save file");
-            }
-        }
-        let (qasm, json): (Vec<_>, Vec<_>) = files
-            .into_iter()
-            .filter(|f| f.valid_pattern())
-            .map(|f| (f.qasm.contents.unwrap(), f.json.contents.unwrap()))
-            .unzip();
-
-        let mut qasm_bin_file = fs::File::create(self.circuit_folder().join("qasm.bin")).unwrap();
-        let mut json_bin_file = fs::File::create(self.circuit_folder().join("json.bin")).unwrap();
-        rmp_serde::encode::write(&mut qasm_bin_file, &qasm).unwrap();
-        rmp_serde::encode::write(&mut json_bin_file, &json).unwrap();
-        qasm.len()
     }
 }

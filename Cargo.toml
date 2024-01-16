@@ -10,6 +10,11 @@ bindgen = "0.69.1"
 
 [dependencies]
 clap = { version = "4.4.15", features = ["derive"] }
+itertools = "0.12.0"
 quantinuum-hugr = { git = "https://github.com/CQCL/hugr", rev = "25d03aa" }
+rand = { version = "0.8.5", features = ["small_rng"] }
 rmp-serde = "1.1.2"
 tket2 = { git = "https://github.com/CQCL/tket2", rev = "d44ac89", features = ["portmatching"] }
+union-find = "0.4.2"
+uuid = { version = "1.6.1", features = ["v4"] }
+walkdir = "2.4.0"

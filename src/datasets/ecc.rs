@@ -1,34 +1,30 @@
 use std::{
     ffi::CString,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, fs,
 };
 
-use super::CircuitDataset;
+use super::FolderDataset;
 
 /// A circuit dataset obtained from an ECC file.
 pub struct ECCDataset {
     circuit_folder: PathBuf,
+    ecc_file: PathBuf,
 }
 
 impl ECCDataset {
     /// Creates a new ECC dataset from an ECC file.
-    pub fn from_ecc(ecc_file: &Path, qasm_folder: PathBuf) -> Self {
-        save_qasm(ecc_file, &qasm_folder);
+    pub fn new(ecc_file: PathBuf, circuit_folder: PathBuf) -> Self {
         Self {
-            circuit_folder: qasm_folder,
+            ecc_file,
+            circuit_folder,
         }
-    }
-
-    pub fn new(circuit_folder: PathBuf) -> Self {
-        Self { circuit_folder }
     }
 }
 
-impl CircuitDataset for ECCDataset {
-    fn from_circuit_folder(folder: &Path) -> Self {
-        Self {
-            circuit_folder: folder.to_path_buf(),
-        }
+impl FolderDataset for ECCDataset {
+    fn unpack(&self) {
+        fs::create_dir_all(&self.circuit_folder).unwrap();
+        save_qasm(&self.ecc_file, &self.circuit_folder);
     }
 
     fn circuit_folder(&self) -> &Path {

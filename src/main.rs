@@ -1,18 +1,25 @@
 use clap::{Parser, Subcommand};
+use itertools::izip;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::{
     fs::{self, File},
     io::{self, Write},
+    mem,
     path::{Path, PathBuf},
     process::Command,
     str::FromStr,
-    time::{Duration, Instant},
+    time::{self, Duration, Instant},
 };
 use tket2::{
     json::load_tk1_json_str,
     portmatching::{CircuitPattern, PatternMatcher},
 };
+use uuid::Uuid;
+use walkdir::WalkDir;
 
-use datasets::{ecc::ECCDataset, Dataset, QasmAndJson};
+use datasets::{ecc::ECCDataset, Dataset, NoGenFolderDataset, QasmAndJson};
+
+use crate::datasets::random::RandomDataset;
 
 mod datasets;
 mod utils;
@@ -29,12 +36,27 @@ struct Cli {
 enum Actions {
     /// Generate the datasets. If empty, all default datasets are generated.
     Generate {
+        /// Number of qubits in each of the random datasets.
+        #[arg(short, long)]
+        qubits: Vec<usize>,
+        /// Number of gates in each of the random datasets.
+        #[arg(short, long)]
+        gates: Vec<usize>,
+        /// Number of circuits in each of the random datasets.
+        #[arg(short, long)]
+        n_circuits: Vec<usize>,
+
         /// The ECC datasets to generate circuits from.
         #[arg(short, long)]
         ecc_datasets: Vec<PathBuf>,
+
         /// Whether to save the generated circuits to separate files.
         #[arg(short, long)]
         save_files: bool,
+
+        /// Randomness seed.
+        #[arg(long)]
+        seed: Option<u64>,
     },
     /// Run benchmarks on datasets. If empty, all default datasets are run.
     ///
@@ -47,9 +69,9 @@ enum Actions {
         /// Whether to benchmark the portmatching pattern matching.
         #[arg(short, long)]
         portmatching: bool,
-        /// The ECC datasets to use for benchmarking.
+        /// The datasets to use for benchmarking.
         #[arg(short, long)]
-        ecc_datasets: Vec<PathBuf>,
+        datasets: Vec<PathBuf>,
         /// The target circuit to run pattern matching on.
         ///
         /// Either JSON or QASM file
@@ -72,27 +94,33 @@ enum Actions {
 fn main() {
     match Cli::parse().action {
         Actions::Generate {
+            mut qubits,
+            mut gates,
+            mut n_circuits,
             mut ecc_datasets,
             save_files,
+            seed,
         } => {
-            add_default_datasets(&mut ecc_datasets);
-            generate_datasets(ecc_datasets, save_files)
+            default_gen_params(&mut qubits, &mut gates, &mut n_circuits, &mut ecc_datasets);
+            generate_ecc_datasets(ecc_datasets, save_files);
+            let rng = SmallRng::seed_from_u64(seed.unwrap_or((1u64 << 32) - 1));
+            generate_random_datasets(&qubits, &gates, &n_circuits, save_files, rng);
         }
         Actions::Run {
             mut quartz,
             mut portmatching,
-            mut ecc_datasets,
+            mut datasets,
             target_file,
             output_folder,
         } => {
             let output_folder = output_folder.unwrap_or("results".to_string());
             let target_circ = load_circ_file(&target_file);
-            add_default_datasets(&mut ecc_datasets);
-            let all_datasets: Vec<_> = ecc_datasets
+            default_run_params(&mut datasets);
+            let datasets: Vec<_> = datasets
                 .into_iter()
                 .map(|path| {
                     let path = path.with_extension("");
-                    ECCDataset::new(path)
+                    NoGenFolderDataset::new(path)
                 })
                 .collect();
             if !quartz && !portmatching {
@@ -100,7 +128,7 @@ fn main() {
                 portmatching = true;
             }
             let bench_sizes = (200..=10000).step_by(200);
-            for dataset in all_datasets {
+            for dataset in datasets {
                 if quartz {
                     let bench_result = run_quartz(&dataset, &target_circ, bench_sizes.clone());
                     save_csv(
@@ -130,26 +158,72 @@ fn main() {
         } => {
             let results_folder = results_folder.unwrap_or(PathBuf::from("results"));
             let output_file = output_file.unwrap_or(PathBuf::from("results/bench-plot.pdf"));
-            plot(&results_folder, &output_file).unwrap();
+            plot(&results_folder, &output_file);
         }
     };
 }
 
+fn default_gen_params(
+    qubits: &mut Vec<usize>,
+    gates: &mut Vec<usize>,
+    n_circuits: &mut Vec<usize>,
+    ecc_datasets: &mut Vec<PathBuf>,
+) {
+    assert!(qubits.len() == gates.len() && gates.len() == n_circuits.len());
+
+    // If no params are provided, generate the default datasets
+    if qubits.is_empty() && ecc_datasets.is_empty() {
+        ecc_datasets.extend(
+            DEFAULT_ECC_DATASETS
+                .iter()
+                .map(|path| PathBuf::from_str(path).unwrap()),
+        );
+        qubits.extend(DEFAULT_RANDOM_QB);
+        gates.extend(DEFAULT_RANDOM_GATES);
+        n_circuits.extend(DEFAULT_RANDOM_N_CIRC);
+    }
+}
+
 const DEFAULT_ECC_DATASETS: &[&str] = &[
-    "datasets/voqc-eccs/Voqc_7_3_complete_ECC_set.json",
-    "datasets/voqc-eccs/Voqc_7_2_complete_ECC_set.json",
-    "datasets/voqc-eccs/Voqc_7_1_complete_ECC_set.json",
+    "datasets/eccs/2_6-eccs.json",
+    "datasets/eccs/3_6-eccs.json",
+    "datasets/eccs/4_6-eccs.json",
 ];
 
-fn generate_datasets(ecc_datasets: Vec<PathBuf>, save_files: bool) {
+const DEFAULT_RANDOM_QB: &[usize] = &[2, 3, 4, 6, 8, 10];
+const DEFAULT_RANDOM_GATES: &[usize] = &[15, 15, 15, 15, 15, 15];
+const DEFAULT_RANDOM_N_CIRC: &[usize] = &[10000, 10000, 10000, 10000, 10000, 10000];
+
+fn generate_ecc_datasets(ecc_datasets: Vec<PathBuf>, save_files: bool) {
     let ecc_datasets = ecc_datasets.into_iter().map(|path| {
         let new_folder = path.with_extension("");
-        println!("Generating dataset in {}...", new_folder.to_str().unwrap());
-        fs::create_dir_all(&new_folder).unwrap();
-        ECCDataset::from_ecc(&path, new_folder)
+        ECCDataset::new(path, new_folder)
     });
-    let n_circs = ecc_datasets
-        .map(|dataset| dataset.generate(save_files))
+    generate_datasets(ecc_datasets, save_files)
+}
+
+fn generate_random_datasets(
+    qubits: &[usize],
+    gates: &[usize],
+    n_circuits: &[usize],
+    save_files: bool,
+    mut rng: impl Rng + Clone,
+) {
+    let random_datasets = izip!(n_circuits, qubits, gates).map(|(&n, &qb, &g)| {
+        let folder = format!("datasets/random/{}_{}-random", qb, g,);
+        let new_rng = SmallRng::from_rng(&mut rng).unwrap();
+        RandomDataset::new(new_rng, n, qb, g, folder.into())
+    });
+    generate_datasets(random_datasets, save_files)
+}
+
+fn generate_datasets(datasets: impl IntoIterator<Item = impl Dataset>, save_files: bool) {
+    let n_circs = datasets
+        .into_iter()
+        .map(|dataset| {
+            println!("Generating dataset {}...", dataset.name());
+            dataset.generate(save_files)
+        })
         .sum::<usize>();
     println!("Generated {} circuits", n_circs);
 }
@@ -235,17 +309,16 @@ fn run_quartz(
     bench_results
 }
 
-fn plot(results_folder: &PathBuf, output_file: &PathBuf) -> io::Result<String> {
-    Command::new("python")
+fn plot(results_folder: &PathBuf, output_file: &PathBuf) {
+    let out = Command::new("python")
         .arg("py-scripts/plot.py")
         .arg("-r")
         .arg(results_folder)
         .arg("-o")
         .arg(output_file)
         .output()
-        .and_then(|output| {
-            String::from_utf8(output.stdout).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-        })
+        .unwrap();
+    println!("{}", String::from_utf8(out.stdout).unwrap());
 }
 
 fn save_csv(
@@ -276,12 +349,21 @@ fn load_circ_file(target_file: &Path) -> QasmAndJson {
     target
 }
 
-fn add_default_datasets(ecc_datasets: &mut Vec<PathBuf>) {
-    if ecc_datasets.is_empty() {
-        ecc_datasets.extend(
-            DEFAULT_ECC_DATASETS
-                .iter()
-                .map(|path| PathBuf::from_str(path).unwrap()),
-        );
+/// If no datasets are provided, run all datasets for which `.bin` files exist.
+fn default_run_params(datasets: &mut Vec<PathBuf>) {
+    let mut folders = mem::replace(datasets, Vec::new());
+    if folders.is_empty() {
+        folders.push("results".into());
     }
+    for folder in folders {
+        let folder = folder.with_extension("");
+        for entry in WalkDir::new(folder).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() && path.extension().unwrap() == "bin" {
+                datasets.push(path.parent().unwrap().to_path_buf());
+            }
+        }
+    }
+    datasets.sort_unstable();
+    datasets.dedup();
 }
