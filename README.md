@@ -4,6 +4,7 @@ portmatching: https://github.com/lmondada/portmatching
 
 ## Reproduce the benchmarking
 ### Dependencies and setup
+You will need a recent C++ compiler, a recent Python interpreter and Rust 1.75 or newer.
 1. Compile the `quartz_runtime` library of the Quartz project (https://github.com/quantum-compiler/quartz) and copy the resulting library file to a new `lib` folder.
 2. Compile the minimal quartz bindings used in this project using
    `
@@ -17,12 +18,16 @@ portmatching: https://github.com/lmondada/portmatching
 
 ### Benchmarking
 4. The first time `cargo build` is run, it will create a `bindings.rs` file in the `quartz_bindings` folder.
-5. Run `cargo run generate` to generate the datasets. For large datasets
-   (such as the default ones), it is worth running the script `py-scripts/qasm_to_json.py`
-   manually, as the baked-in tool is very slow. For that, run the `generate` command
-   with the `--save-files` flag. Once the program starts generating `JSON` files,
-   interrupt the program and run `qasm_to_json.py` manually on that folder instead.
-6. Run `cargo run --release -- run` to run the benchmarks. By default, results are stored in
+5. Run
+6. ```cargo run --release -- generate -s```
+   to generate the datasets. For large datasets
+   (such as the default ones), it is worth running with the `-s` flag (will create temporary
+   QASM and JSON files), or running the script `py-scripts/qasm_to_json.py`
+   manually, as the in-memory conversion is very slow.
+8. Run
+   ```cargo run --release -- run datasets/circuits/barenco_tof_10.qasm```
+   to run the benchmarks, matching the patterns in the `datasets` folder again
+   the Barenco decomposition of a 10-qubit toffoli. By default, results are stored in
    a new `results` folder. See `--help` for more options.
 
 ### Plot results

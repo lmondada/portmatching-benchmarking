@@ -3,6 +3,7 @@ results
 venv
 quartz_bindings/bindings.rs
 datasets/eccs/*/*
+datasets/random
 Cargo.lock
 
 .DS_Store

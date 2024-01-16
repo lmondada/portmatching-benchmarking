@@ -94,15 +94,9 @@ qreg q[{}];"#,
                 uf.union(a, b);
                 qasm.push_str(&format!("cx q[{}],q[{}];\n", a, b));
             }
-            Gate::Rz(a, theta) => {
-                //     qasm.push_str(&format!("rz({}) q[{}];\n", (theta as f64) * PI / 4., a));
-            }
-            Gate::H(a) => {
-                qasm.push_str(&format!("h q[{}];\n", a));
-            }
-            Gate::X(a) => {
-                qasm.push_str(&format!("x q[{}];\n", a));
-            }
+            Gate::H(a) => qasm.push_str(&format!("h q[{}];\n", a)),
+            Gate::T(a) => qasm.push_str(&format!("t q[{}];\n", a)),
+            // Gate::Tdg(a) => qasm.push_str(&format!("tdg q[{}];\n", a)),
             Gate::Invalid => unreachable!(),
         }
     }
@@ -115,10 +109,9 @@ qreg q[{}];"#,
 
 enum Gate {
     Cx(usize, usize),
-    ///  the second parameter is the angle in multiples of pi/4
-    Rz(usize, usize),
     H(usize),
-    X(usize),
+    T(usize),
+    // Tdg(usize),
     Invalid,
 }
 
@@ -127,11 +120,11 @@ impl Gate {
         assert!(n_qubits > 0);
         let mut g = Self::Invalid;
         while !g.is_valid() {
-            g = match rng.gen_range(0..4) {
+            g = match rng.gen_range(0..3) {
                 0 => Gate::Cx(rng.gen_range(0..n_qubits), rng.gen_range(0..n_qubits)),
-                1 => Gate::Rz(rng.gen_range(0..n_qubits), rng.gen_range(0..8)),
-                2 => Gate::H(rng.gen_range(0..n_qubits)),
-                _ => Gate::X(rng.gen_range(0..n_qubits)),
+                1 => Gate::H(rng.gen_range(0..n_qubits)),
+                _ => Gate::T(rng.gen_range(0..n_qubits)),
+                // _ => Gate::Tdg(rng.gen_range(0..n_qubits)),
             };
         }
         g

@@ -6,9 +6,9 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-def create_voqc_plot(all_data):
-    voqc_data = all_data[all_data['dataset type'] == 'voqc-ecc']
-    col_order = sorted(voqc_data['n_qubits'].unique())
+def create_eccs_plot(all_data):
+    eccs_data = all_data[all_data['dataset type'] == 'eccs']
+    col_order = sorted(eccs_data['n_qubits'].unique())
 
     sns.set_style('ticks', {
         'grid.linestyle': ':',
@@ -20,9 +20,9 @@ def create_voqc_plot(all_data):
     order = ['Portmatching', 'Quartz']
     # Create a plot comparing portmatching with quartz
     f = sns.relplot(
-        data=voqc_data,
+        data=eccs_data,
         x="Number of patterns",
-        y="Duration (s)",
+        y="Runtime (s)",
         style="Pattern matching algorithm",
         style_order=order,
         markers=["P", "^"],
@@ -38,10 +38,10 @@ def create_voqc_plot(all_data):
             ax.grid(axis='y')
 
     sns.move_legend(f, "upper left", bbox_to_anchor=(0.1, 0.9), frameon=True, alignment='left')
-    plt.savefig("voqc-plot.pdf")
+    plt.savefig("eccs-plot.pdf")
 
 def create_random_plot(all_data):
-    random_data = all_data[all_data['dataset type'] != 'voqc-ecc']
+    random_data = all_data[all_data['dataset type'] == 'random']
     random_data = random_data[random_data['Pattern matching algorithm'] == 'Portmatching']
     qubit_order = sorted(random_data['n_qubits'].unique())
 
@@ -56,7 +56,7 @@ def create_random_plot(all_data):
     f = sns.relplot(
         data=random_data,
         x="Number of patterns",
-        y="Duration (s)",
+        y="Runtime (s)",
         hue="n_qubits",
         style="n_qubits",
         style_order=qubit_order,
@@ -113,7 +113,7 @@ def rename_data_columns(all_data):
         },
     )
 
-    # Get the number of qubits from the dataset name (assuming Voqc datasets)
+    # Get the number of qubits from the dataset name
     def get_qb(s):
         # string format: "{n_qbs}_{n_gates}-{dataset_type}}"
         match = re.search(r'(\d+)_(\d+)-.+', s)
@@ -123,7 +123,7 @@ def rename_data_columns(all_data):
             print("Warning: could not extract number of qubits from dataset name")
             return s
 
-    # Get the number of qubits from the dataset name (assuming Voqc datasets)
+    # Get the number of qubits from the dataset name
     def get_type(s):
         # string format: "{n_qbs}_{n_gates}-{dataset_type}}"
         match = re.search(r'(\d+)_(\d+)-(.+)', s)
@@ -148,7 +148,7 @@ all_data = load_data(results_folder)
 all_data = rename_data_columns(all_data)
 
 # Create a plot comparing portmatching with quartz
-create_voqc_plot(all_data)
+create_eccs_plot(all_data)
 
 # Create a plot comparing portmatching across qubit counts
 create_random_plot(all_data)

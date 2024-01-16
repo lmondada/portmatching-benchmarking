@@ -8,11 +8,11 @@
 
 using namespace quartz;
 
-// Context CTX({GateType::input_qubit, GateType::input_param, GateType::h,
-//                GateType::cx, GateType::x, GateType::rz, GateType::add});
-Context voqc(voqc_gate_set());
-Context input_CTX({GateType::input_qubit, GateType::input_param});
-Context CTX = union_contexts(&voqc, &input_CTX);
+Context CTX({GateType::input_qubit, GateType::input_param, GateType::h,
+               GateType::cx, GateType::x, GateType::t});
+// Context voqc(voqc_gate_set());
+// Context input_CTX({GateType::input_qubit, GateType::input_param});
+// Context CTX = union_contexts(&voqc, &input_CTX);
 
 // std::vector<std::string> get_sorted_qasm_files(const std::string &folder) {
 //   std::vector<std::filesystem::directory_entry> qasm_files;

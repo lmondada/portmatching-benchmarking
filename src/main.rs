@@ -353,7 +353,7 @@ fn load_circ_file(target_file: &Path) -> QasmAndJson {
 fn default_run_params(datasets: &mut Vec<PathBuf>) {
     let mut folders = mem::replace(datasets, Vec::new());
     if folders.is_empty() {
-        folders.push("results".into());
+        folders.push("datasets".into());
     }
     for folder in folders {
         let folder = folder.with_extension("");
