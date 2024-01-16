@@ -2,12 +2,8 @@ lib
 results
 venv
 quartz_bindings/bindings.rs
-datasets/voqc-eccs/*/*
+datasets/eccs/*/*
 Cargo.lock
-
-# too big for github
-datasets/voqc-eccs/Voqc_6_4_representative_set.json
-datasets/voqc-eccs/Voqc_8_3_representative_set.json
 
 .DS_Store
 
